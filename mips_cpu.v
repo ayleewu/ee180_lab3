@@ -67,8 +67,7 @@ module mips_cpu (
         .instr_id       (instr_id[25:0]),
         .pc             (pc_if)
     );
-
-    assign pc = pc_if; // output pc to parent module
+     assign pc = pc_if; // output pc to parent module
 
     // needed for D stage
     dffare #(32) pc_if2id (.clk(clk), .r(rst), .en(en_if), .d(pc_if), .q(pc_id));
@@ -77,7 +76,8 @@ module mips_cpu (
     dffare #(32) instr_sav_dff (.clk(clk), .r(rst), .en(en), .d(instr), .q(instr_sav));
     dffare #(1) stall_f_dff (.clk(clk), .r(rst), .en(en), .d(stall), .q(stall_r));
     assign instr_id = (stall_r) ? instr_sav : instr;
- wire [29:0] instr_number_id = pc_id[31:2]; // useful for viewing waveforms
+
+    wire [29:0] instr_number_id = pc_id[31:2]; // useful for viewing waveforms
 
     decode d_stage (
         // inputs
@@ -136,15 +136,14 @@ module mips_cpu (
     dffarre #(4)  alu_opcode_id2ex (.clk(clk), .ar(rst), .r(rst_id), .en(en), .d(alu_opcode_id), .q(alu_opcode_ex));
     dffarre       movn (.clk(clk), .ar(rst), .r(rst_id), .en(en), .d(movn_id), .q(movn_ex));
     dffarre       movz (.clk(clk), .ar(rst), .r(rst_id), .en(en), .d(movz_id), .q(movz_ex));
-
-    // Added piepline ID 2 EX
+// Added piepline ID 2 EX
     dffarre mem_half_id2ex (.clk(clk), .ar(rst), .r(rst_id), .en(en), .d(mem_half_id), .q(mem_half_ex));
     dffarre mem_read_id2ex (.clk(clk), .ar(rst), .r(rst_id), .en(en), .d(mem_read_id), .q(mem_read_ex));
 
     // needed for M stage
     dffarre #(32) mem_write_data_id2ex (.clk(clk), .ar(rst), .r(rst_id), .en(en), .d(mem_write_data_id), .q(mem_write_data_ex));
     dffarre mem_we_id2ex (.clk(clk), .ar(rst), .r(rst_id), .en(en), .d(mem_we_id & ~mem_sc_mask_id), .q(mem_we_ex));
-//dffarre mem_read_id2ex (.clk(clk), .ar(rst), .r(rst_id), .en(en), .d(1'b0), .q());
+    //dffarre mem_read_id2ex (.clk(clk), .ar(rst), .r(rst_id), .en(en), .d(1'b0), .q());
     dffarre mem_byte_id2ex (.clk(clk), .ar(rst), .r(rst_id), .en(en), .d(mem_byte_id), .q(mem_byte_ex));
     dffarre mem_signextend_id2ex (.clk(clk), .ar(rst), .r(rst_id), .en(en), .d(mem_signextend_id), .q(mem_signextend_ex));
 
@@ -193,11 +192,11 @@ module mips_cpu (
     //assign mem_read_ex = 1'b0;
     //assign mem_read_mem = 1'b0;
     assign mem_read_en = mem_read_ex;
-    assign mem_write_en = sw ? 4'b1111 : sb ? (4'b0001 << a) : sh_ok ? (a[1] ? 4'b1100 : 4'b0011) : 4'b0000;
+    assign mem_write_en = sw ? 4'b1111 : sb ? (4'b0001 << a) : sh_ok ? (a[1] ? 4'b0011 : 4'b1100) : 4'b0000;
     wire [31:0] sb_data = {4{mem_write_data_ex[7:0]}};
-    wire [31:0] sh_data = (mem_addr[1] == 1'b0) ?
-            {16'h0000, mem_write_data_ex[15:0]} :
-            {mem_write_data_ex[15:0], 16'h0000};
+    wire [31:0] sh_data = (alu_result_ex[1] == 1'b0) ?
+            {mem_write_data_ex[15:0], 16'h0000} :
+            {16'h0000, mem_write_data_ex[15:0]};
     assign mem_write_data = mem_byte_ex ? sb_data : mem_half_ex ? sh_data : mem_write_data_ex;
 
     assign mem_addr = alu_result_ex;
@@ -206,13 +205,16 @@ module mips_cpu (
                                        ((alu_result_mem[1:0] == 2'b01) ? mem_read_data[23:16] :
                                        ((alu_result_mem[1:0] == 2'b10) ? mem_read_data[15:8] : mem_read_data[7:0]));
     assign mem_read_data_byte_extend = {{24{mem_signextend_mem & mem_read_data_byte_select[7]}}, mem_read_data_byte_select};
-    assign mem_out = (mem_byte_mem) ? mem_read_data_byte_extend : mem_read_data;
+    wire [15:0] mem_read_data_half_select = (alu_result_mem[1] == 1'b0) ? mem_read_data[31:16] : mem_read_data[15:0];
+    wire [31:0] mem_read_data_half_extend = {{16{mem_signextend_mem & mem_read_data_half_select[15]}}, mem_read_data_half_select};
+    assign mem_out = (mem_byte_mem) ? mem_read_data_byte_extend : mem_half_mem ? mem_read_data_half_extend : mem_read_data;
     assign reg_write_data_mem = mem_read_mem ? mem_out : alu_result_mem;
 
     // needed for W stage
     dffare #(32) reg_write_data_mem2wb (.clk(clk), .r(rst), .en(en), .d(reg_write_data_mem), .q(reg_write_data_wb));
     dffare #(5) reg_write_addr_mem2wb (.clk(clk), .r(rst), .en(en), .d(reg_write_addr_mem), .q(reg_write_addr_wb));
     dffare reg_we_mem2wb (.clk(clk), .r(rst), .en(en), .d(reg_we_mem), .q(reg_we_wb));
+
     regfile w_stage (
         .clk            (clk),
         .en             (en),
@@ -227,3 +229,5 @@ module mips_cpu (
     );
 
 endmodule
+                                                        
+
