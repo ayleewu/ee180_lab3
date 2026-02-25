@@ -129,7 +129,7 @@ module decode (
 // ALU instructions decode / control signal for ALU datapath
 //******************************************************************************
 
-    always @* begin
+       always @* begin
         casex({op, funct})
             {`ADDI, `DC6}:      alu_opcode = `ALU_ADD;
             {`ADDIU, `DC6}:     alu_opcode = `ALU_ADDU;
@@ -159,6 +159,7 @@ module decode (
             {`SPECIAL, `SLLV}:  alu_opcode = `ALU_SLL;
             {`SPECIAL, `SRLV}:  alu_opcode = `ALU_SRL;
             // Added instructions
+            {`XORI, `DC6}:      alu_opcode = `ALU_XOR;
             {`SPECIAL, `XOR}:   alu_opcode = `ALU_XOR;
             {`SPECIAL2, `MUL}:  alu_opcode = `ALU_MUL;
             {`LH, `DC6}:        alu_opcode = `ALU_ADD;
@@ -186,13 +187,15 @@ module decode (
 //******************************************************************************
 // Compute value for 32 bit immediate data
 //******************************************************************************
-
     wire use_imm = &{op != `SPECIAL, op != `SPECIAL2, op != `BNE, op != `BEQ}; // where to get 2nd ALU operand from: 0 for RtData, 1 for Immediate
 
     wire [31:0] imm_sign_extend = {{16{immediate[15]}}, immediate};
+    wire [31:0] imm_zero_extend = {16'b0, immediate};
     wire [31:0] imm_upper = {immediate, 16'b0};
 
-    wire [31:0] imm = (op == `LUI) ? imm_upper : imm_sign_extend;
+    wire isLogicImm = (op == `ANDI) | (op == `ORI) | (op == `XORI);
+
+    wire [31:0] imm = (op == `LUI) ? imm_upper : isLogicImm ?  imm_zero_extend : imm_sign_extend;
 
 //******************************************************************************
 // forwarding and stalling logic
@@ -265,9 +268,11 @@ module decode (
 //******************************************************************************
 // Load linked / Store conditional
 //******************************************************************************
-
+    
+    // not complete but doesn't affect any tests right now because we haven't tested stores
+    wire nc_store_happens;
     assign mem_sc_id = (op == `SC);
-    assign nc_store_happens = |{(op == 'SW), (op == 'SB), (op == 'SH)};
+    assign nc_store_happens = |{(op == `SW), (op == `SB), (op == `SH)};
 
     // 'mem_sc_mask_id' is high when a store conditional should not store.
     assign mem_sc_mask_id = (nc_store_happens & atomic_ex) ? 1'b1 : 1'b0;
@@ -275,6 +280,7 @@ module decode (
     // 'atomic_id' is high when a load-linked has not been followed by
     // a store.
     assign atomic_id = (op == `LL);
+
 
 
 //******************************************************************************
