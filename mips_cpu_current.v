@@ -50,7 +50,8 @@ module mips_cpu (
 
     // Added Regs
     reg resv_valid;
-instruction_fetch if_stage (
+
+    instruction_fetch if_stage (
         .clk            (clk),
         .rst            (rst),
         .en             (en_if),
@@ -75,7 +76,8 @@ instruction_fetch if_stage (
     assign instr_id = (stall_r) ? instr_sav : instr;
 
     wire [29:0] instr_number_id = pc_id[31:2]; // useful for viewing waveforms
-  decode d_stage (
+
+ decode d_stage (
         // inputs
         .pc                 (pc_id),
         .instr              (instr_id),
@@ -112,7 +114,7 @@ instruction_fetch if_stage (
         .alu_result_ex      (alu_result_ex),
         .mem_read_ex        (mem_read_ex),
 
-        // inputs for forwarding/stalling from M
+          // inputs for forwarding/stalling from M
         .reg_we_mem         (reg_we_mem),
         .reg_write_addr_mem (reg_write_addr_mem),
         .reg_write_data_mem (reg_write_data_mem),
@@ -120,6 +122,9 @@ instruction_fetch if_stage (
         // Added wires
         .mem_half(mem_half_id)
     );
+
+    //=================================================================================================
+    // EX Stage
 
     // Load-linked / Store-conditional
     dffarre       atomic  (.clk(clk), .ar(rst), .r(rst_id), .en(en), .d(mem_atomic_id), .q(mem_atomic_ex));
@@ -132,10 +137,11 @@ instruction_fetch if_stage (
     dffarre       movn (.clk(clk), .ar(rst), .r(rst_id), .en(en), .d(movn_id), .q(movn_ex));
     dffarre       movz (.clk(clk), .ar(rst), .r(rst_id), .en(en), .d(movz_id), .q(movz_ex));
 
-    // Added piepline ID 2 EX
+
     dffarre mem_half_id2ex (.clk(clk), .ar(rst), .r(rst_id), .en(en), .d(mem_half_id), .q(mem_half_ex));
     dffarre mem_read_id2ex (.clk(clk), .ar(rst), .r(rst_id), .en(en), .d(mem_read_id), .q(mem_read_ex));
-// needed for M stage
+
+
     dffarre #(32) mem_write_data_id2ex (.clk(clk), .ar(rst), .r(rst_id), .en(en), .d(mem_write_data_id), .q(mem_write_data_ex));
     dffarre mem_we_id2ex (.clk(clk), .ar(rst), .r(rst_id), .en(en), .d(mem_we_id), .q(mem_we_ex));
     //dffarre mem_read_id2ex (.clk(clk), .ar(rst), .r(rst_id), .en(en), .d(1'b0), .q());
@@ -159,23 +165,8 @@ instruction_fetch if_stage (
         .alu_overflow   (alu_overflow) // maybe do something creative with this
     );
 
-    // needed for M stage
-    wire [31:0] sc_result = {{31{1'b0}},(mem_sc_ex & mem_we_ex)};
-
-
-    //dffare mem_read_ex2mem (.clk(clk), .r(rst), .en(en), .d(1'b0), .q());
-    dffare mem_byte_ex2mem (.clk(clk), .r(rst), .en(en), .d(mem_byte_ex), .q(mem_byte_mem));
-    dffare mem_signextend_ex2mem (.clk(clk), .r(rst), .en(en), .d(mem_signextend_ex), .q(mem_signextend_mem));
-
-    // Added pipeline EX 2 MEM
-    dffare mem_half_ex2mem (.clk(clk), .r(rst), .en(en), .d(mem_half_ex), .q(mem_half_mem));
-    dffare mem_read_ex2mem (.clk(clk), .r(rst), .en(en), .d(mem_read_ex), .q(mem_read_mem));
-
-    // needed for W stage
-    dffare #(5) reg_write_addr_ex2mem (.clk(clk), .r(rst), .en(en), .d(reg_write_addr_ex), .q(reg_write_addr_mem));
-    dffare reg_we_ex2mem (.clk(clk), .r(rst), .en(en), .d(reg_we_ex), .q(reg_we_mem));
-
- // LL & SC Handling 
+ //=================================================================================
+    // LL & SC Handling
 
     wire is_sc_ex = mem_sc_ex;
     wire is_non_sc_store_ex = mem_we_ex & ~is_sc_ex;
@@ -198,44 +189,65 @@ instruction_fetch if_stage (
                  end
               end
     end
-// Added for sh and lh instructions 
-    wire [1:0] a = alu_result_ex[1:0];
-    wire sw = mem_we_ex_final & ~mem_byte_ex & ~mem_half_ex;
-    wire sb = mem_we_ex_final & mem_byte_ex;
-    wire sh = mem_we_ex_final & mem_half_ex;
-    wire sh_ok = sh & ~a[0];
 
-    //assign mem_read_ex = 1'b0;
-    //assign mem_read_mem = 1'b0;
-    assign mem_read_en = mem_read_ex;
-    assign mem_write_en = sw ? 4'b1111 : sb ? (4'b1000 >> a) : sh_ok ? (a[1] ? 4'b0011 : 4'b1100) : 4'b0000;
-    wire [31:0] sb_data = {4{mem_write_data_ex[7:0]}};
-    wire [31:0] sh_data = (alu_result_ex[1] == 1'b0) ?
-            {mem_write_data_ex[15:0], 16'h0000} :
-            {16'h0000, mem_write_data_ex[15:0]};
-    assign mem_write_data = mem_byte_ex ? sb_data : mem_half_ex ? sh_data : mem_write_data_ex;
-
-    assign mem_addr = alu_result_ex;
-
-   // assign mem_write_data = (mem_byte_ex) ? {4{mem_write_data_ex[7:0]}} : mem_half_ex ? {2{mem_write_data_ex[15:0]}} : mem_write_data_ex;
-    assign mem_read_data_byte_select =  (alu_result_mem[1:0] == 2'b00) ? mem_read_data[31:24] :
-                                       ((alu_result_mem[1:0] == 2'b01) ? mem_read_data[23:16] :
-                                       ((alu_result_mem[1:0] == 2'b10) ? mem_read_data[15:8] : mem_read_data[7:0]));
-    assign mem_read_data_byte_extend = {{24{mem_signextend_mem & mem_read_data_byte_select[7]}}, mem_read_data_byte_select};
-    wire [15:0] mem_read_data_half_select = (alu_result_mem[1] == 1'b0) ? mem_read_data[31:16] : mem_read_data[15:0];
-    wire [31:0] mem_read_data_half_extend = {{16{mem_signextend_mem & mem_read_data_half_select[15]}}, mem_read_data_half_select};
-
-    assign mem_out = (mem_byte_mem) ? mem_read_data_byte_extend : mem_half_mem ? mem_read_data_half_extend : mem_read_data;
-    assign reg_write_data_mem = mem_read_mem ? mem_out : alu_result_mem;
     wire [31:0] alu_sc_result_ex = is_sc_ex ? {31'b0, sc_success_ex} : alu_result_ex;
 
-    // needed for W stage
-    dffare #(32) alu_result_ex2mem (.clk(clk), .r(rst), .en(en), .d(alu_sc_result_ex), .q(alu_result_mem));
+ //================================================================================ 
+    // MEM Stage
+
+    wire [31:0] addr_mem;
+    wire [31:0] alu_result_mem;
+    wire mem_we_mem; // Store enable in MEM Stage
+
+    // needed for M stage
+    wire [31:0] sc_result = {{31{1'b0}},(mem_sc_ex & mem_we_ex)};
+
+    // Transferring Data from EX to MEM
+    dffare #(32) addr_ex2mem (.clk(clk), .r(rst), .en(en), .d(addr_ex), .q(addr_mem));
+    dffare #(32) store_ex2mem (.clk(clk), .r(rst), .en(en), .d(alu_result_ex), .q(alu_result_mem));
+    
+    dffare #(5) reg_write_addr_ex2mem (.clk(clk), .r(rst), .en(en), .d(reg_write_addr_ex), .q(reg_write_addr_mem));
+    dffare reg_we_ex2mem (.clk(clk), .r(rst), .en(en), .d(reg_we_ex), .q(reg_we_mem));
+    dffare mem_byte_ex2mem (.clk(clk), .r(rst), .en(en), .d(mem_byte_ex), .q(mem_byte_mem));
+    dffare mem_signextend_ex2mem (.clk(clk), .r(rst), .en(en), .d(mem_signextend_ex), .q(mem_signextend_mem));
+    dffare mem_half_ex2mem (.clk(clk), .r(rst), .en(en), .d(mem_half_ex), .q(mem_half_mem));
+    dffare mem_read_ex2mem (.clk(clk), .r(rst), .en(en), .d(mem_read_ex), .q(mem_read_mem));
+
+    // Drive memory port from MEM Stage
+    assign mem_addr = addr_mem;
+    assign mem_read_en = en ? mem_read_mem : 1'b0;
+
+    // Big-endian byte lanes
+    wire [1:0] off = addr_mem[1:0];
+
+    wire sw_m = mem_we_mem & ~mem_byte_mem & ~mem_half_mem;
+    wire sb_m = mem_we_mem & mem_byte_mem;
+    wire sh_m = mem_we_mem & mem_half_mem;
+    wire sh_ok_m = sh_m & ~off[0]; // halfword alignment
+
+    wire [3:0] sb_we = (4'b1000 >> off);
+    wire [3:0] sh_we = off[1] ? 4'b0011 : 4'b1100;
+
+    wire [3:0] mem_write_en_raw = sw_m ? 4'b1111 : sb_m ? sb_we : sh_ok_m ? sh_we : 4'b0000;
+
+    // Store Data placement 
+    wire [31:0] sb_data = {4{alu_result_mem[7:0]}};
+    wire [31:0] sh_data = (off[1] == 1'b0) ? {alu_result_mem[15:0], 16'h0000} : {16'h0000, alu_result_mem[15:0]};
+
+    // Load Data 
+    assign mem_read_data_byte_select = (off == 2'b00) ? mem_read_data[31:24] : (off == 2'b01) ? mem_read_data[23:16] : (off == 2'b10) ? mem_read_data[15:8] : mem_read_data[7:0];
+    assign mem_read_data_byte_extend = {{24{mem_signextend_mem & mem_read_data_byte_select[7]}}, mem_read_data_byte_select};
+    wire [15:0] mem_read_data_half_select = (off[1] == 1'b0) ? mem_read_data[31:16] : mem_read_data[15:0];
+    wire [31:0] mem_read_data_half_extend = {{16{mem_signextend_mem & mem_read_data_half_select[15]}}, mem_read_data_half_select};
+    assign mem_out = mem_byte_mem ? mem_read_data_byte_extend : mem_half_mem ? mem_read_data_half_extend : mem_read_data;
+  //==================================================================================
+    // WB Stage
+
     dffare #(32) reg_write_data_mem2wb (.clk(clk), .r(rst), .en(en), .d(reg_write_data_mem), .q(reg_write_data_wb));
     dffare #(5) reg_write_addr_mem2wb (.clk(clk), .r(rst), .en(en), .d(reg_write_addr_mem), .q(reg_write_addr_wb));
     dffare reg_we_mem2wb (.clk(clk), .r(rst), .en(en), .d(reg_we_mem), .q(reg_we_wb));
 
-   regfile w_stage (
+    regfile w_stage (
         .clk            (clk),
         .en             (en),
         .reg_write_data (reg_write_data_wb),
@@ -249,4 +261,4 @@ instruction_fetch if_stage (
     );
 
 endmodule
-                   
+
