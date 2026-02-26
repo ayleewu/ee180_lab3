@@ -31,7 +31,7 @@ module decode (
     output wire [4:0] rs_addr,
     output wire [4:0] rt_addr,
     output wire atomic_id,
-    input  atomic_ex,
+    input  wire  atomic_ex,
     output wire mem_sc_mask_id,
     output wire mem_sc_id,
 
@@ -49,6 +49,7 @@ module decode (
     // Added wires
     output wire mem_half
 );
+
 //******************************************************************************
 // instruction field
 //******************************************************************************
@@ -125,11 +126,12 @@ module decode (
 //******************************************************************************
 
     wire isMUL = (op == `SPECIAL2) & (funct == `MUL);
+
 //******************************************************************************
 // ALU instructions decode / control signal for ALU datapath
 //******************************************************************************
 
-       always @* begin
+    always @* begin
         casex({op, funct})
             {`ADDI, `DC6}:      alu_opcode = `ALU_ADD;
             {`ADDIU, `DC6}:     alu_opcode = `ALU_ADDU;
@@ -141,7 +143,6 @@ module decode (
             {`LW, `DC6}:        alu_opcode = `ALU_ADD;
             {`LBU, `DC6}:       alu_opcode = `ALU_ADD;
             {`SB, `DC6}:        alu_opcode = `ALU_ADD;
-            {`SW, `DC6}:        alu_opcode = `ALU_ADD;
             {`BEQ, `DC6}:       alu_opcode = `ALU_SUBU;
             {`BNE, `DC6}:       alu_opcode = `ALU_SUBU;
             {`SPECIAL, `ADD}:   alu_opcode = `ALU_ADD;
@@ -187,7 +188,9 @@ module decode (
 //******************************************************************************
 // Compute value for 32 bit immediate data
 //******************************************************************************
-    wire use_imm = &{op != `SPECIAL, op != `SPECIAL2, op != `BNE, op != `BEQ}; // where to get 2nd ALU operand from: 0 for RtData, 1 for Immediate
+
+    wire use_imm = &{op != `SPECIAL, op != `SPECIAL2, op != `BNE, op != `BEQ}; // where to get 2nd ALU operr
+and from: 0 for RtData, 1 for Immediate
 
     wire [31:0] imm_sign_extend = {{16{immediate[15]}}, immediate};
     wire [31:0] imm_zero_extend = {16'b0, immediate};
@@ -213,7 +216,8 @@ module decode (
     wire isLUI = op == `LUI;
     wire read_from_rs = ~|{isLUI, jump_target, isShiftImm};
 
-    wire isALUImm = |{op == `ADDI, op == `ADDIU, op == `SLTI, op == `SLTIU, op == `ANDI, op == `ORI};
+    wire isALUImm = |{op == `ADDI, op == `ADDIU, op == `SLTI, op == `SLTIU, op == `ANDI, op == `ORI, op ==  
+`XORI};
     wire read_from_rt = ~|{isLUI, jump_target, isALUImm, mem_read};
 
     // Check load use hazard and stall if so
@@ -260,7 +264,8 @@ module decode (
 //******************************************************************************
 
     assign mem_we = |{op == `SW, op == `SB, op == `SH,  op == `SC};    // write to memory
-    assign mem_read = isLB | isLBU | isLH | (op == `LW);                     // use memory data for writing to a register
+    assign mem_read = isLB | isLBU | isLH | (op == `LW) | isLL;                     // use memory data for  
+writing to a register
     assign mem_byte = |{op == `SB, op == `LB, op == `LBU};    // memory operations use only one byte
     assign mem_signextend = isLB | isLH;     // sign extend sub-word memory reads
     assign mem_half = (op == `SH) | (op == `LH);
@@ -268,20 +273,12 @@ module decode (
 //******************************************************************************
 // Load linked / Store conditional
 //******************************************************************************
-    
-    // not complete but doesn't affect any tests right now because we haven't tested stores
-    wire nc_store_happens;
-    assign mem_sc_id = (op == `SC);
-    assign nc_store_happens = |{(op == `SW), (op == `SB), (op == `SH)};
 
-    // 'mem_sc_mask_id' is high when a store conditional should not store.
-    assign mem_sc_mask_id = (nc_store_happens & atomic_ex) ? 1'b1 : 1'b0;
+    assign mem_sc_id = (op == `SC);
 
     // 'atomic_id' is high when a load-linked has not been followed by
     // a store.
     assign atomic_id = (op == `LL);
-
-
 
 //******************************************************************************
 // Branch resolution
@@ -299,4 +296,4 @@ module decode (
                            (isBLEZ & (rs_data[31] | (rs_data == 32'b0)))};
 
 endmodule
-                                                                                                                                                                                                 297,1         Bot
+                      
