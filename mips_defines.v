@@ -98,7 +98,6 @@
 
 `define NOP 32'b0 // same as sll $zero, $zero, 0
 
-
 // opcodes for the ALU
 
 `define ALU_ADDU 4'd0
@@ -118,4 +117,7 @@
 `define ALU_SUB 4'd14
 `define ALU_MUL 4'd15
 `define ALU_SUBM 4'd15 // changed this to 15 bits from 16
-                                                                                                                                                                                      120,21        Bot
+                                                                                          120,1         Bot
+
+
+
