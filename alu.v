@@ -45,10 +45,10 @@ module alu (
             `ALU_XOR:   alu_result = alu_op_x ^ alu_op_y;
             `ALU_SRA:   alu_result = alu_op_y_signed >>> alu_op_x[4:0];
             `ALU_MUL:   alu_result = alu_op_x * alu_op_y;
+            `ALU_NOR:   alu_result = ~(alu_op_x | alu_op_y);
             default:    alu_result = 32'hxxxxxxxx;   // undefined
         endcase
     end
-
     wire alu_neg = alu_result[31];
     wire x_neg = alu_op_x[31];
     wire y_neg = alu_op_y[31];
@@ -67,4 +67,4 @@ module alu (
                             sub_check & (sub_pos_over | sub_neg_over)};
 
 endmodule
-                                                                                          69,9          Bot
+                                                                                                                                                                                                                                                          70,1          Bot
