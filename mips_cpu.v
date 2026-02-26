@@ -1,9 +1,3 @@
-//=============================================================================
-// EE180 Lab 3
-//
-// MIPS CPU Module. Contains the five stages in the single-cycle MIPS CPU.
-//=============================================================================
-
 module mips_cpu (
     input clk,
     input rst,
@@ -54,8 +48,10 @@ module mips_cpu (
     wire mem_half_ex;
     wire mem_half_mem;
 
+    // Added Regs
+    reg resv_valid;
 
-    instruction_fetch if_stage (
+instruction_fetch if_stage (
         .clk            (clk),
         .rst            (rst),
         .en             (en_if),
@@ -67,7 +63,9 @@ module mips_cpu (
         .instr_id       (instr_id[25:0]),
         .pc             (pc_if)
     );
-     assign pc = pc_if; // output pc to parent module
+
+
+    assign pc = pc_if; // output pc to parent module
 
     // needed for D stage
     dffare #(32) pc_if2id (.clk(clk), .r(rst), .en(en_if), .d(pc_if), .q(pc_id));
@@ -79,7 +77,7 @@ module mips_cpu (
 
     wire [29:0] instr_number_id = pc_id[31:2]; // useful for viewing waveforms
 
-    decode d_stage (
+ decode d_stage (
         // inputs
         .pc                 (pc_id),
         .instr              (instr_id),
@@ -125,9 +123,8 @@ module mips_cpu (
         .mem_half(mem_half_id)
     );
 
-    // Load-linked / Store-conditional
-    wire atomic_en = en & mem_read_id;
-    dffarre       atomic  (.clk(clk), .ar(rst), .r(rst_id), .en(atomic_en), .d(mem_atomic_id), .q(mem_atomic_ex));
+// Load-linked / Store-conditional
+    dffarre       atomic  (.clk(clk), .ar(rst), .r(rst_id), .en(en), .d(mem_atomic_id), .q(mem_atomic_ex));
     dffarre       sc      (.clk(clk), .ar(rst), .r(rst_id), .en(en), .d(mem_sc_id), .q(mem_sc_ex));
 
     // needed for X stage
@@ -136,22 +133,24 @@ module mips_cpu (
     dffarre #(4)  alu_opcode_id2ex (.clk(clk), .ar(rst), .r(rst_id), .en(en), .d(alu_opcode_id), .q(alu_opcode_ex));
     dffarre       movn (.clk(clk), .ar(rst), .r(rst_id), .en(en), .d(movn_id), .q(movn_ex));
     dffarre       movz (.clk(clk), .ar(rst), .r(rst_id), .en(en), .d(movz_id), .q(movz_ex));
-// Added piepline ID 2 EX
+
+    // Added piepline ID 2 EX
     dffarre mem_half_id2ex (.clk(clk), .ar(rst), .r(rst_id), .en(en), .d(mem_half_id), .q(mem_half_ex));
     dffarre mem_read_id2ex (.clk(clk), .ar(rst), .r(rst_id), .en(en), .d(mem_read_id), .q(mem_read_ex));
 
     // needed for M stage
     dffarre #(32) mem_write_data_id2ex (.clk(clk), .ar(rst), .r(rst_id), .en(en), .d(mem_write_data_id), .q(mem_write_data_ex));
-    dffarre mem_we_id2ex (.clk(clk), .ar(rst), .r(rst_id), .en(en), .d(mem_we_id & ~mem_sc_mask_id), .q(mem_we_ex));
+    dffarre mem_we_id2ex (.clk(clk), .ar(rst), .r(rst_id), .en(en), .d(mem_we_id), .q(mem_we_ex));
     //dffarre mem_read_id2ex (.clk(clk), .ar(rst), .r(rst_id), .en(en), .d(1'b0), .q());
     dffarre mem_byte_id2ex (.clk(clk), .ar(rst), .r(rst_id), .en(en), .d(mem_byte_id), .q(mem_byte_ex));
-    dffarre mem_signextend_id2ex (.clk(clk), .ar(rst), .r(rst_id), .en(en), .d(mem_signextend_id), .q(mem_signextend_ex));
+    dffarre mem_signextend_id2ex (.clk(clk), .r(rst_id), .en(en), .d(mem_signextend_id), .q(mem_signextend_ex));
 
     // needed for W stage
     dffarre #(5) reg_write_addr_id2ex (.clk(clk), .ar(rst), .r(rst_id), .en(en), .d(reg_write_addr_id), .q(reg_write_addr_ex));
     dffarre reg_we_id2ex (.clk(clk), .ar(rst), .r(rst_id), .en(en), .d(reg_we_id), .q(reg_we_cond_ex));
 
     assign reg_we_ex = reg_we_cond_ex & |{movz_ex & alu_op_y_zero_ex, movn_ex & ~alu_op_y_zero_ex, ~movz_ex & ~movn_ex};
+
 
     alu x_stage (
         .alu_opcode     (alu_opcode_ex),
@@ -167,7 +166,7 @@ module mips_cpu (
     wire [31:0] sc_result = {{31{1'b0}},(mem_sc_ex & mem_we_ex)};
 
     // Maybe need to check if we violated any ll/sc pair
-    wire [31:0] alu_sc_result_ex = alu_result_ex;   // TODO: Need to conditionally inject SC value
+
     dffare #(32) alu_result_ex2mem (.clk(clk), .r(rst), .en(en), .d(alu_sc_result_ex), .q(alu_result_mem));
     //dffare mem_read_ex2mem (.clk(clk), .r(rst), .en(en), .d(1'b0), .q());
     dffare mem_byte_ex2mem (.clk(clk), .r(rst), .en(en), .d(mem_byte_ex), .q(mem_byte_mem));
@@ -181,12 +180,34 @@ module mips_cpu (
     dffare #(5) reg_write_addr_ex2mem (.clk(clk), .r(rst), .en(en), .d(reg_write_addr_ex), .q(reg_write_addr_mem));
     dffare reg_we_ex2mem (.clk(clk), .r(rst), .en(en), .d(reg_we_ex), .q(reg_we_mem));
 
-    // Added for sb and sh instructions 
-    wire [1:0] a = alu_result_ex[1:0];
+    // LL & SC Handling 
 
-    wire sw = mem_we_ex & ~mem_byte_ex & ~mem_half_ex;
-    wire sb = mem_we_ex & mem_byte_ex;
-    wire sh = mem_we_ex & mem_half_ex;
+    wire is_sc_ex = mem_sc_ex;
+    wire is_non_sc_store_ex = mem_we_ex & ~is_sc_ex;
+    wire sc_success_ex = is_sc_ex & resv_valid;
+    wire mem_we_ex_final = mem_we_ex & (~is_sc_ex | sc_success_ex);
+    wire is_ll_ex = mem_atomic_ex; // LL in EX
+
+    always @(posedge clk) begin
+            if (rst) begin
+                    resv_valid <= 1'b0;
+
+            end else if (en) begin
+                    //kill reservation on any non-SC store
+                    if (is_non_sc_store_ex)
+                            resv_valid <= 1'b0;
+                    if (is_sc_ex)
+                            resv_valid <= 1'b0;
+                    if (is_ll_ex) begin
+                            resv_valid <= 1'b1;
+                 end
+              end
+    end
+// Added for sh and lh instructions 
+    wire [1:0] a = alu_result_ex[1:0];
+    wire sw = mem_we_ex_final & ~mem_byte_ex & ~mem_half_ex;
+    wire sb = mem_we_ex_final & mem_byte_ex;
+    wire sh = mem_we_ex_final & mem_half_ex;
     wire sh_ok = sh & ~a[0];
 
     //assign mem_read_ex = 1'b0;
@@ -200,6 +221,9 @@ module mips_cpu (
     assign mem_write_data = mem_byte_ex ? sb_data : mem_half_ex ? sh_data : mem_write_data_ex;
 
     assign mem_addr = alu_result_ex;
+
+    // Added for LL / SC Handling, sc write back
+    wire [31:0] alu_sc_result_ex = is_sc_ex ? {31'b0, sc_success_ex} : alu_result_ex;
    // assign mem_write_data = (mem_byte_ex) ? {4{mem_write_data_ex[7:0]}} : mem_half_ex ? {2{mem_write_data_ex[15:0]}} : mem_write_data_ex;
     assign mem_read_data_byte_select =  (alu_result_mem[1:0] == 2'b00) ? mem_read_data[31:24] :
                                        ((alu_result_mem[1:0] == 2'b01) ? mem_read_data[23:16] :
@@ -207,6 +231,7 @@ module mips_cpu (
     assign mem_read_data_byte_extend = {{24{mem_signextend_mem & mem_read_data_byte_select[7]}}, mem_read_data_byte_select};
     wire [15:0] mem_read_data_half_select = (alu_result_mem[1] == 1'b0) ? mem_read_data[31:16] : mem_read_data[15:0];
     wire [31:0] mem_read_data_half_extend = {{16{mem_signextend_mem & mem_read_data_half_select[15]}}, mem_read_data_half_select};
+
     assign mem_out = (mem_byte_mem) ? mem_read_data_byte_extend : mem_half_mem ? mem_read_data_half_extend : mem_read_data;
     assign reg_write_data_mem = mem_read_mem ? mem_out : alu_result_mem;
 
@@ -229,5 +254,4 @@ module mips_cpu (
     );
 
 endmodule
-                                                        
-
+                                                                                          261,7         Bot
