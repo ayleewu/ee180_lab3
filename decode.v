@@ -94,14 +94,17 @@ module decode (
 //******************************************************************************
 // jump instructions decode
 //******************************************************************************
-
+   
     wire isJ    = (op == `J);
     wire isJAL  = (op == `JAL);
 
     wire isJR   = (op == `SPECIAL) & (funct == `JR);
     wire isJALR = (op == `SPECIAL) & (funct == `JALR);
 
+    // Sends input signals back to IF if jumping to label
     assign jump_target = isJ | isJAL;
+
+    // Sends input signals back to IP if jumping to register
     assign jump_reg    = isJR | isJALR;
     assign jr_pc       = rs_data;
 
@@ -161,12 +164,16 @@ module decode (
             {`SPECIAL, `SRLV}:  alu_opcode = `ALU_SRL;
             // Added instructions
             {`XORI, `DC6}:      alu_opcode = `ALU_XOR;
+            {`ANDI, `DC6}:      alu_opcode = `ALU_AND;
             {`SPECIAL, `XOR}:   alu_opcode = `ALU_XOR;
             {`SPECIAL2, `MUL}:  alu_opcode = `ALU_MUL;
             {`LH, `DC6}:        alu_opcode = `ALU_ADD;
             {`SH, `DC6}:        alu_opcode = `ALU_ADD;
             {`SPECIAL, `SRA}:   alu_opcode = `ALU_SRA;
             {`SPECIAL, `SRAV}:  alu_opcode = `ALU_SRA;
+            {`SPECIAL, `NOR}:   alu_opcode = `ALU_NOR;
+            {`JAL, `DC6}:       alu_opcode = `ALU_PASSY;
+            {`SPECIAL, `JALR}:  alu_opcode = `ALU_PASSY;
             // compare rs data to 0, only care about 1 operand
             {`BGTZ, `DC6}:      alu_opcode = `ALU_PASSX;
             {`BLEZ, `DC6}:      alu_opcode = `ALU_PASSX;
