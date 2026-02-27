@@ -51,6 +51,10 @@ module mips_cpu (
     // Added Regs
     reg resv_valid;
 
+//=====================================================
+// IF STAGE
+// ====================================================
+
 instruction_fetch if_stage (
         .clk            (clk),
         .rst            (rst),
@@ -77,7 +81,21 @@ instruction_fetch if_stage (
 
     wire [29:0] instr_number_id = pc_id[31:2]; // useful for viewing waveforms
 
- decode d_stage (
+    // needed for D stage
+    dffare #(32) pc_if2id (.clk(clk), .r(rst), .en(en_if), .d(pc_if), .q(pc_id));
+
+    // Saved ID instruction after a stall
+    dffare #(32) instr_sav_dff (.clk(clk), .r(rst), .en(en), .d(instr), .q(instr_sav));
+    dffare #(1) stall_f_dff (.clk(clk), .r(rst), .en(en), .d(stall), .q(stall_r));
+    assign instr_id = (stall_r) ? instr_sav : instr;
+
+    wire [29:0] instr_number_id = pc_id[31:2]; // useful for viewing waveforms
+
+//=====================================================
+// ID STAGE
+// ====================================================
+
+decode d_stage (
         // inputs
         .pc                 (pc_id),
         .instr              (instr_id),
@@ -151,8 +169,11 @@ instruction_fetch if_stage (
 
     assign reg_we_ex = reg_we_cond_ex & |{movz_ex & alu_op_y_zero_ex, movn_ex & ~alu_op_y_zero_ex, ~movz_ex & ~movn_ex};
 
-
-    alu x_stage (
+//=====================================================
+// EX STAGE
+// ====================================================
+    
+        alu x_stage (
         .alu_opcode     (alu_opcode_ex),
         .alu_op_x       (alu_op_x_ex),
         .alu_op_y       (alu_op_y_ex),
@@ -167,7 +188,7 @@ instruction_fetch if_stage (
 
     // Maybe need to check if we violated any ll/sc pair
 
-    dffare #(32) alu_result_ex2mem (.clk(clk), .r(rst), .en(en), .d(alu_sc_result_ex), .q(alu_result_mem));
+    dffare #(32) alu_result_ex2mem (.clk(clk), .r(rst), .en(en), .d(alu_result_ex), .q(alu_result_mem));
     //dffare mem_read_ex2mem (.clk(clk), .r(rst), .en(en), .d(1'b0), .q());
     dffare mem_byte_ex2mem (.clk(clk), .r(rst), .en(en), .d(mem_byte_ex), .q(mem_byte_mem));
     dffare mem_signextend_ex2mem (.clk(clk), .r(rst), .en(en), .d(mem_signextend_ex), .q(mem_signextend_mem));
@@ -203,7 +224,7 @@ instruction_fetch if_stage (
                  end
               end
     end
-// Added for sh and lh instructions 
+    // Added for sh and lh instructions 
     wire [1:0] a = alu_result_ex[1:0];
     wire sw = mem_we_ex_final & ~mem_byte_ex & ~mem_half_ex;
     wire sb = mem_we_ex_final & mem_byte_ex;
@@ -213,7 +234,7 @@ instruction_fetch if_stage (
     //assign mem_read_ex = 1'b0;
     //assign mem_read_mem = 1'b0;
     assign mem_read_en = mem_read_ex;
-    assign mem_write_en = sw ? 4'b1111 : sb ? (4'b0001 << a) : sh_ok ? (a[1] ? 4'b0011 : 4'b1100) : 4'b0000;
+    assign mem_write_en = sw ? 4'b1111 : sb ? (4'b1000 >> a) : sh_ok ? (a[1] ? 4'b0011 : 4'b1100) : 4'b0000;
     wire [31:0] sb_data = {4{mem_write_data_ex[7:0]}};
     wire [31:0] sh_data = (alu_result_ex[1] == 1'b0) ?
             {mem_write_data_ex[15:0], 16'h0000} :
@@ -225,6 +246,10 @@ instruction_fetch if_stage (
     // Added for LL / SC Handling, sc write back
     wire [31:0] alu_sc_result_ex = is_sc_ex ? {31'b0, sc_success_ex} : alu_result_ex;
    // assign mem_write_data = (mem_byte_ex) ? {4{mem_write_data_ex[7:0]}} : mem_half_ex ? {2{mem_write_data_ex[15:0]}} : mem_write_data_ex;
+    /=====================================================
+// MEM STAGE
+// ====================================================
+    // assign mem_write_data = (mem_byte_ex) ? {4{mem_write_data_ex[7:0]}} : mem_half_ex ? {2{mem_write_data_ex[15:0]}} : mem_write_data_ex;
     assign mem_read_data_byte_select =  (alu_result_mem[1:0] == 2'b00) ? mem_read_data[31:24] :
                                        ((alu_result_mem[1:0] == 2'b01) ? mem_read_data[23:16] :
                                        ((alu_result_mem[1:0] == 2'b10) ? mem_read_data[15:8] : mem_read_data[7:0]));
@@ -240,6 +265,10 @@ instruction_fetch if_stage (
     dffare #(5) reg_write_addr_mem2wb (.clk(clk), .r(rst), .en(en), .d(reg_write_addr_mem), .q(reg_write_addr_wb));
     dffare reg_we_mem2wb (.clk(clk), .r(rst), .en(en), .d(reg_we_mem), .q(reg_we_wb));
 
+//=====================================================
+// WB STAGE
+// ====================================================
+
     regfile w_stage (
         .clk            (clk),
         .en             (en),
@@ -254,4 +283,6 @@ instruction_fetch if_stage (
     );
 
 endmodule
+                                                                                          261,7         Bot
+                                                                                                        
                                                                                           261,7         Bot
