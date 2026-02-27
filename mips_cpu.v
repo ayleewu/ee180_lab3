@@ -81,21 +81,11 @@ instruction_fetch if_stage (
 
     wire [29:0] instr_number_id = pc_id[31:2]; // useful for viewing waveforms
 
-    // needed for D stage
-    dffare #(32) pc_if2id (.clk(clk), .r(rst), .en(en_if), .d(pc_if), .q(pc_id));
-
-    // Saved ID instruction after a stall
-    dffare #(32) instr_sav_dff (.clk(clk), .r(rst), .en(en), .d(instr), .q(instr_sav));
-    dffare #(1) stall_f_dff (.clk(clk), .r(rst), .en(en), .d(stall), .q(stall_r));
-    assign instr_id = (stall_r) ? instr_sav : instr;
-
-    wire [29:0] instr_number_id = pc_id[31:2]; // useful for viewing waveforms
-
 //=====================================================
 // ID STAGE
 // ====================================================
 
-decode d_stage (
+ decode d_stage (
         // inputs
         .pc                 (pc_id),
         .instr              (instr_id),
@@ -168,12 +158,11 @@ decode d_stage (
     dffarre reg_we_id2ex (.clk(clk), .ar(rst), .r(rst_id), .en(en), .d(reg_we_id), .q(reg_we_cond_ex));
 
     assign reg_we_ex = reg_we_cond_ex & |{movz_ex & alu_op_y_zero_ex, movn_ex & ~alu_op_y_zero_ex, ~movz_ex & ~movn_ex};
-
 //=====================================================
 // EX STAGE
 // ====================================================
-    
-        alu x_stage (
+
+    alu x_stage (
         .alu_opcode     (alu_opcode_ex),
         .alu_op_x       (alu_op_x_ex),
         .alu_op_y       (alu_op_y_ex),
@@ -245,8 +234,7 @@ decode d_stage (
 
     // Added for LL / SC Handling, sc write back
     wire [31:0] alu_sc_result_ex = is_sc_ex ? {31'b0, sc_success_ex} : alu_result_ex;
-   // assign mem_write_data = (mem_byte_ex) ? {4{mem_write_data_ex[7:0]}} : mem_half_ex ? {2{mem_write_data_ex[15:0]}} : mem_write_data_ex;
-    /=====================================================
+//=====================================================
 // MEM STAGE
 // ====================================================
     // assign mem_write_data = (mem_byte_ex) ? {4{mem_write_data_ex[7:0]}} : mem_half_ex ? {2{mem_write_data_ex[15:0]}} : mem_write_data_ex;
@@ -283,6 +271,4 @@ decode d_stage (
     );
 
 endmodule
-                                                                                          261,7         Bot
-                                                                                                        
-                                                                                          261,7         Bot
+                               
